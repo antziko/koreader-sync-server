@@ -13,5 +13,7 @@ end
 v1:GET("/users/auth", { controller = "syncs", action = "auth_user" })
 v1:PUT("/syncs/progress", { controller = "syncs", action = "update_progress" })
 v1:GET("/syncs/progress/:document", { controller = "syncs", action = "get_progress" })
+v1:PUT("/syncs/bookmarks", { controller = "syncs", action = "update_bookmarks" })
+v1:GET("/syncs/bookmarks/:document", { controller = "syncs", action = "get_bookmarks" })
 v1:GET("/healthcheck", { controller = "syncs", action = "healthcheck" })
 return routes

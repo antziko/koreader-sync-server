@@ -3,6 +3,8 @@ local Redis = require "db.redis"
 local SyncsController = {
     user_key = "user:%s:key",
     doc_key = "user:%s:document:%s",
+    bookmarks_key = "user:%s:bookmarks:%s",
+    bookmarks_field = "bookmarks",
     progress_field = "progress",
     percentage_field = "percentage",
     device_field = "device",
@@ -162,6 +164,78 @@ function SyncsController:update_progress()
             [self.progress_field] = progress,
             [self.device_field] = device,
             [self.device_id_field] = device_id,
+            [self.timestamp_field] = timestamp,
+        })
+        if not ok then
+            self:raise_error(self.error_internal)
+        end
+        return 200, {
+            document = doc,
+            timestamp = timestamp,
+        }
+    else
+        self:raise_error(self.error_invalid_fields)
+    end
+end
+
+function SyncsController:get_bookmarks()
+    local redis = self:getRedis()
+
+    local username = self:authorize()
+    if not username then
+        self:raise_error(self.error_unauthorized_user)
+    end
+
+    local doc = self.params.document
+    if not is_valid_key_field(doc) then
+        self:raise_error(self.error_document_field_missing)
+    end
+
+    local key = string.format(self.bookmarks_key, username, doc)
+    local res = {}
+    local results, err = redis:hmget(key,
+                                     self.bookmarks_field,
+                                     self.timestamp_field)
+    if err then
+        self:raise_error(self.error_internal)
+    end
+
+    -- bookmarks is an opaque JSON-string blob produced by the client; the server
+    -- stores and returns it verbatim and never parses it.
+    if results[1] and results[1] ~= null then
+        res.bookmarks = results[1]
+    end
+    if results[2] and results[2] ~= null then
+        res.timestamp = tonumber(results[2])
+    end
+
+    if next(res) then
+        res.document = doc
+    end
+
+    return 200, res
+end
+
+function SyncsController:update_bookmarks()
+    local redis = self:getRedis()
+
+    local username = self:authorize()
+    if not username then
+        self:raise_error(self.error_unauthorized_user)
+    end
+
+    local doc = self.request.body.document
+    if not is_valid_key_field(doc) then
+        self:raise_error(self.error_document_field_missing)
+    end
+
+    -- bookmarks arrives as a pre-serialized JSON string; stored verbatim.
+    local bookmarks = self.request.body.bookmarks
+    local timestamp = os.time()
+    if is_valid_field(bookmarks) then
+        local key = string.format(self.bookmarks_key, username, doc)
+        local ok, err = redis:hmset(key, {
+            [self.bookmarks_field] = bookmarks,
             [self.timestamp_field] = timestamp,
         })
         if not ok then
