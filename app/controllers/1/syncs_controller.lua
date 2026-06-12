@@ -4,6 +4,7 @@ local SyncsController = {
     user_key = "user:%s:key",
     doc_key = "user:%s:document:%s",
     bookmarks_key = "user:%s:bookmarks:%s",
+    stats_key = "user:%s:stats:%s",
     bookmarks_field = "bookmarks",
     progress_field = "progress",
     percentage_field = "percentage",
@@ -236,6 +237,88 @@ function SyncsController:update_bookmarks()
         local key = string.format(self.bookmarks_key, username, doc)
         local ok, err = redis:hmset(key, {
             [self.bookmarks_field] = bookmarks,
+            [self.timestamp_field] = timestamp,
+        })
+        if not ok then
+            self:raise_error(self.error_internal)
+        end
+        return 200, {
+            document = doc,
+            timestamp = timestamp,
+        }
+    else
+        self:raise_error(self.error_invalid_fields)
+    end
+end
+
+function SyncsController:get_stats()
+    local redis = self:getRedis()
+
+    local username = self:authorize()
+    if not username then
+        self:raise_error(self.error_unauthorized_user)
+    end
+
+    local doc = self.params.document
+    if not is_valid_key_field(doc) then
+        self:raise_error(self.error_document_field_missing)
+    end
+
+    local key = string.format(self.stats_key, username, doc)
+    local flat, err = redis:hgetall(key)
+    if err then
+        self:raise_error(self.error_internal)
+    end
+
+    -- Reading-stats hash: one field per device id holding an opaque JSON blob
+    -- produced by the client (per-device monotonic counters), plus a shared
+    -- "timestamp" field. The server stores blobs verbatim and never parses them;
+    -- the client sums counters across devices itself.
+    local res = {}
+    if flat and flat ~= null and #flat > 0 then
+        local fields = redis:array_to_hash(flat)
+        local stats = {}
+        local has_stats = false
+        for field, value in pairs(fields) do
+            if field == self.timestamp_field then
+                res.timestamp = tonumber(value)
+            else
+                stats[field] = value
+                has_stats = true
+            end
+        end
+        if has_stats then
+            res.stats = stats
+        end
+        res.document = doc
+    end
+
+    return 200, res
+end
+
+function SyncsController:update_stats()
+    local redis = self:getRedis()
+
+    local username = self:authorize()
+    if not username then
+        self:raise_error(self.error_unauthorized_user)
+    end
+
+    local doc = self.request.body.document
+    if not is_valid_key_field(doc) then
+        self:raise_error(self.error_document_field_missing)
+    end
+
+    -- device_id becomes a hash field name: must be a valid key field and must not
+    -- collide with the reserved "timestamp" field. stats is an opaque blob string.
+    local device_id = self.request.body.device_id
+    local stats = self.request.body.stats
+    local timestamp = os.time()
+    if is_valid_key_field(device_id) and device_id ~= self.timestamp_field
+    and is_valid_field(stats) then
+        local key = string.format(self.stats_key, username, doc)
+        local ok, err = redis:hmset(key, {
+            [device_id] = stats,
             [self.timestamp_field] = timestamp,
         })
         if not ok then

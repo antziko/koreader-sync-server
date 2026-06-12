@@ -111,6 +111,39 @@ describe("SyncsController", function()
         end)
     end)
 
+    local function get_stats(username, userkey, document)
+        local response = hit({
+            scheme = "https",
+            method = "GET",
+            path = "/syncs/stats/" .. document,
+            headers = {
+                ["x-auth-user"] = username,
+                ["x-auth-key"] = userkey,
+            },
+        })
+
+        return response
+    end
+
+    local function update_stats(username, userkey, document, device_id, stats)
+        local response = hit({
+            scheme = "https",
+            method = "PUT",
+            path = "/syncs/stats",
+            headers = {
+                ["x-auth-user"] = username,
+                ["x-auth-key"] = userkey,
+            },
+            body = {
+                document = document,
+                device_id = device_id,
+                stats = stats,
+            }
+        })
+
+        return response
+    end
+
     describe("#sync", function()
         local username, userkey, doc = "user1", "passwd123", "89isjkdaj9j"
         before_each(function()
@@ -167,6 +200,60 @@ describe("SyncsController", function()
                 percentage = 0.22,
                 progress = "36",
                 device = "my pb"
+            }, response.body)
+        end)
+    end)
+
+    describe("#stats", function()
+        local username, userkey, doc = "user1", "passwd123", "89isjkdaj9j"
+        before_each(function()
+            register(username, userkey)
+        end)
+        it("should authorize itself before getting stats", function()
+            local response = get_stats(username, userkey.."wrong_pass", doc)
+            assert.are.same(401, response.status)
+            assert.are.same({code = 2001, message = "Unauthorized"}, response.body)
+        end)
+        it("should authorize itself before updating stats", function()
+            local response = update_stats(username, userkey.."wrong_pass",
+                doc, "device-a", "{\"s\":300}")
+            assert.are.same(401, response.status)
+            assert.are.same({code = 2001, message = "Unauthorized"}, response.body)
+        end)
+        it("should reject stats without device_id", function()
+            local response = update_stats(username, userkey, doc, nil, "{\"s\":300}")
+            assert.are.same(402, response.status)
+        end)
+        it("should reject a device_id colliding with the timestamp field", function()
+            local response = update_stats(username, userkey, doc, "timestamp", "{\"s\":300}")
+            assert.are.same(402, response.status)
+        end)
+        it("should update document stats", function()
+            local response = update_stats(username, userkey, doc, "device-a", "{\"s\":300}")
+            assert.are.same(200, response.status)
+            assert.are.same(doc, response.body.document)
+            assert.truthy(response.body.timestamp)
+        end)
+        it("returns empty body for non-existent document", function()
+            local response = get_stats(username, userkey, doc)
+            assert.are.same(200, response.status)
+            assert.are.same({}, response.body)
+        end)
+        it("should keep one stats blob per device", function()
+            update_stats(username, userkey, doc, "device-a", "{\"s\":300}")
+            update_stats(username, userkey, doc, "device-b", "{\"s\":240}")
+            -- Same device updating again replaces only its own blob.
+            update_stats(username, userkey, doc, "device-a", "{\"s\":360}")
+            local response = get_stats(username, userkey, doc)
+            assert.are.same(200, response.status)
+            assert.truthy(response.body.timestamp)
+            response.body.timestamp = nil
+            assert.are.same({
+                document = doc,
+                stats = {
+                    ["device-a"] = "{\"s\":360}",
+                    ["device-b"] = "{\"s\":240}",
+                }
             }, response.body)
         end)
     end)

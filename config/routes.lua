@@ -15,5 +15,7 @@ v1:PUT("/syncs/progress", { controller = "syncs", action = "update_progress" })
 v1:GET("/syncs/progress/:document", { controller = "syncs", action = "get_progress" })
 v1:PUT("/syncs/bookmarks", { controller = "syncs", action = "update_bookmarks" })
 v1:GET("/syncs/bookmarks/:document", { controller = "syncs", action = "get_bookmarks" })
+v1:PUT("/syncs/stats", { controller = "syncs", action = "update_stats" })
+v1:GET("/syncs/stats/:document", { controller = "syncs", action = "get_stats" })
 v1:GET("/healthcheck", { controller = "syncs", action = "healthcheck" })
 return routes
