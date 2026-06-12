@@ -5,6 +5,9 @@ local SyncsController = {
     doc_key = "user:%s:document:%s",
     bookmarks_key = "user:%s:bookmarks:%s",
     stats_key = "user:%s:stats:%s",
+    -- Capability/version tag echoed in stats responses so clients can display
+    -- which server build they are talking to. Bump when the stats API changes.
+    stats_server_tag = "stats-v1",
     bookmarks_field = "bookmarks",
     progress_field = "progress",
     percentage_field = "percentage",
@@ -327,6 +330,7 @@ function SyncsController:update_stats()
         return 200, {
             document = doc,
             timestamp = timestamp,
+            server = self.stats_server_tag,
         }
     else
         self:raise_error(self.error_invalid_fields)
